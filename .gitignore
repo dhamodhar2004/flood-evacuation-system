@@ -1,0 +1,16 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Large data files
+backend/data/*.geojson
+backend/data/*.tif
+backend/data/*.graphml
+cache/
+
+# OS files
+.DS_Store
+Thumbs.db

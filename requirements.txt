@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+osmnx
+geopandas
+networkx
+shapely
+pyogrio
+rasterio
+scikit-learn
+requests
