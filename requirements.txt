@@ -8,3 +8,6 @@ pyogrio
 rasterio
 scikit-learn
 requests
+streamlit
+folium
+streamlit-folium
