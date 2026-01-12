@@ -11,3 +11,4 @@ requests
 streamlit
 folium
 streamlit-folium
+geopy
