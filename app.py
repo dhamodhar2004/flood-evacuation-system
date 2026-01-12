@@ -8,7 +8,16 @@ from streamlit_folium import st_folium
 # -----------------------------
 # CONFIG
 # -----------------------------
+# -----------------------------
+# API URL CONFIG (SAFE)
+# -----------------------------
 API_URL = "http://127.0.0.1:8000/route"
+
+try:
+    API_URL = st.secrets["API_URL"]
+except Exception:
+    pass
+
 
 st.set_page_config(page_title="Flood Evacuation System", layout="centered")
 
@@ -38,11 +47,11 @@ if st.button("🚨 Find Safe Route"):
         st.session_state.result = response.json()
         st.session_state.user_location = (lat, lon)
 
-    except Exception as e:
-        st.session_state.result = {
-            "status": "fail",
-            "message": str(e)
-        }
+    except Exception:
+        st.warning(
+            "Backend is running locally. "
+            "For full demo, please run the backend on a local machine."
+        )
 
 # -----------------------------
 # DISPLAY RESULT (PERSISTENT)
@@ -131,3 +140,4 @@ if st.session_state.result:
 
     else:
         st.error("No safe route found.")
+
