@@ -1,13 +1,21 @@
 import json
-import geopandas as gpd
 import streamlit as st
 import requests
 import folium
 from streamlit_folium import st_folium
 
-# -----------------------------
-# CONFIG
-# -----------------------------
+# Optional imports (used only if available locally)
+try:
+    import geopandas as gpd
+except Exception:
+    gpd = None
+
+try:
+    from geopy.geocoders import Nominatim
+except Exception:
+    Nominatim = None
+
+
 # -----------------------------
 # API URL CONFIG (SAFE)
 # -----------------------------
@@ -19,10 +27,14 @@ except Exception:
     pass
 
 
+# -----------------------------
+# PAGE CONFIG
+# -----------------------------
 st.set_page_config(page_title="Flood Evacuation System", layout="centered")
 
 st.title("🌊 Flood Evacuation Routing System")
 st.write("Enter your location to find the safest evacuation route.")
+
 
 # -----------------------------
 # SESSION STATE INIT
@@ -30,20 +42,76 @@ st.write("Enter your location to find the safest evacuation route.")
 if "result" not in st.session_state:
     st.session_state.result = None
 
+if "user_location" not in st.session_state:
+    st.session_state.user_location = None
+
+
+# -----------------------------
+# LOCATION INPUT MODE
+# -----------------------------
+input_mode = st.radio(
+    "Choose location input method:",
+    ["Location Name", "Latitude & Longitude"]
+)
+
+
 # -----------------------------
 # USER INPUT
 # -----------------------------
-lat = st.number_input("Enter Latitude", value=13.0604, format="%.6f")
-lon = st.number_input("Enter Longitude", value=80.2496, format="%.6f")
+if input_mode == "Location Name":
+    location_name = st.text_input(
+        "Enter Location Name",
+        value="Egmore, Chennai"
+    )
+
+else:
+    lat = st.number_input(
+        "Enter Latitude",
+        value=13.0604,
+        format="%.6f"
+    )
+    lon = st.number_input(
+        "Enter Longitude",
+        value=80.2496,
+        format="%.6f"
+    )
+
 
 # -----------------------------
-# BUTTON
+# BUTTON ACTION
 # -----------------------------
 if st.button("🚨 Find Safe Route"):
+
+    # Resolve location name → lat/lon
+    if input_mode == "Location Name":
+
+        if Nominatim is None:
+            st.error("Geocoding service not available.")
+            st.stop()
+
+        try:
+            geolocator = Nominatim(user_agent="flood-evacuation-system")
+            location = geolocator.geocode(location_name)
+
+            if location is None:
+                st.error("Location not found. Please try a different name.")
+                st.stop()
+
+            lat = location.latitude
+            lon = location.longitude
+
+            st.info(
+                f"📍 Resolved location: ({lat:.5f}, {lon:.5f})"
+            )
+
+        except Exception:
+            st.error("Failed to resolve location name.")
+            st.stop()
+
     payload = {"lat": lat, "lon": lon}
 
     try:
-        response = requests.post(API_URL, json=payload)
+        response = requests.post(API_URL, json=payload, timeout=15)
         st.session_state.result = response.json()
         st.session_state.user_location = (lat, lon)
 
@@ -52,6 +120,8 @@ if st.button("🚨 Find Safe Route"):
             "Backend is running locally. "
             "For full demo, please run the backend on a local machine."
         )
+        st.session_state.result = None
+
 
 # -----------------------------
 # DISPLAY RESULT (PERSISTENT)
@@ -60,7 +130,8 @@ if st.session_state.result:
 
     result = st.session_state.result
 
-    if result["status"] == "success":
+    if result.get("status") == "success":
+
         st.success("Safe route found!")
 
         distance_km = result["distance_meters"] / 1000
@@ -78,7 +149,9 @@ if st.session_state.result:
             icon=folium.Icon(color="blue", icon="user")
         ).add_to(m)
 
-        # Draw safe route if available
+        # -----------------------------
+        # SAFE ROUTE (GREEN)
+        # -----------------------------
         route_coords = result.get("route", [])
 
         if route_coords:
@@ -88,33 +161,38 @@ if st.session_state.result:
                 weight=5,
                 tooltip="Safe Evacuation Route"
             ).add_to(m)
-        # -----------------------------
-        # SHOW BLOCKED ROADS (RED)
-        # -----------------------------
-        try:
-            blocked_roads = gpd.read_file(
-                "backend/data/roads_with_status.geojson"
-            )
-            blocked_roads = blocked_roads[blocked_roads["status"] == "blocked"]
 
-            for _, row in blocked_roads.iterrows():
-                if row.geometry.geom_type == "LineString":
-                    coords = [
-                        (lat, lon)
-                        for lon, lat in row.geometry.coords
-                    ]
-
-                    folium.PolyLine(
-                        locations=coords,
-                        color="red",
-                        weight=2,
-                        opacity=0.6
-                    ).add_to(m)
-
-        except Exception as e:
-            st.warning("Blocked roads could not be loaded")
         # -----------------------------
-        # SHOW FLOOD ZONES (BLUE)
+        # BLOCKED ROADS (RED) – LOCAL ONLY
+        # -----------------------------
+        if gpd is not None:
+            try:
+                blocked_roads = gpd.read_file(
+                    "backend/data/roads_with_status.geojson"
+                )
+                blocked_roads = blocked_roads[
+                    blocked_roads["status"] == "blocked"
+                ]
+
+                for _, row in blocked_roads.iterrows():
+                    if row.geometry.geom_type == "LineString":
+                        coords = [
+                            (lat, lon)
+                            for lon, lat in row.geometry.coords
+                        ]
+
+                        folium.PolyLine(
+                            locations=coords,
+                            color="red",
+                            weight=2,
+                            opacity=0.6
+                        ).add_to(m)
+
+            except Exception:
+                st.info("Blocked roads shown in local demo only.")
+
+        # -----------------------------
+        # FLOOD ZONES (BLUE) – LOCAL ONLY
         # -----------------------------
         try:
             with open("backend/data/flood_polygons.geojson", "r") as f:
@@ -133,11 +211,9 @@ if st.session_state.result:
             ).add_to(m)
 
         except Exception:
-            st.warning("Flood zones could not be loaded")
+            st.info("Flood zones shown in local demo only.")
 
         st_folium(m, width=700, height=500)
 
-
     else:
         st.error("No safe route found.")
-
